@@ -1,0 +1,9 @@
+    vars_domain: subdomain.example.org
+    vars_name_nextcloud: ncserver
+    vars_ip_nextcloud: 10.10.2.30
+    vars_ip_netmask: 255.255.255.0
+    vars_ip_router: 10.10.2.1
+    vars_ip_range: 10.10.2.0/24
+    vars_domainname_nextcloud: nc.example.org
+    vars_domainemail_nextcloud: webmaster@example.org
+    vars_nfs_mount_source: dataserver:/datadir/nextcloud

@@ -1,0 +1,12 @@
+    vault_root_password_dc: s3cr3t
+    vult_nextcloud_postgres_systemuser_password: s3cr3t
+    vault_nextcloud_postgres_user_password: s3cr3t
+    vault_nextcloud_postgres_db_owner: ncuser
+    vault_nextcloud_postgres_db_owner_password: s3cr3t
+    vault_nextcloud_postgres_database: ncdb
+    vault_nextcloud_postgres_rainloop_db_owner: rainloopuser
+    vault_nextcloud_postgres_rainloop_db_owner_password: s3cr3t
+    vault_nextcloud_postgres_rainloop_database: rainloopdb
+    vault_nextcloud_admin_user: ncadmin
+    vault_nextcloud_admin_password: s3cr3t
+

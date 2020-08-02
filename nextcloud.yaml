@@ -1,0 +1,602 @@
+---
+#required for pwd hashing --> pip install passlib
+- hosts: nextcloud
+  remote_user: root
+  vars: 
+    required_packages: 
+      - tasksel
+      - ntp
+      - ntpstat
+      - gnupg2
+      - git
+      - lsb-release
+      - ssl-cert
+      - ca-certificates
+      - dnsutils
+      - wget
+      - curl
+      - sudo
+      - apt-transport-https
+      - tree
+      - locate
+      - software-properties-common
+      - dirmngr
+      - screen
+      - htop
+      - acl
+      - host
+      - parted
+      - nfs-common
+      - pigz
+      - nano
+      - net-tools
+      - zip
+      - unzip
+      - bind9utils
+      - nfs-common
+      - ffmpeg
+      - ghostscript
+      - libfile-fcntllock-perl
+      - libfontconfig1
+      - libfuse2
+      - nginx
+      - letsencrypt
+      - python-certbot-nginx
+      - postgresql
+      - postgresql-contrib
+      - libpq-dev
+      - redis-server
+      - php-redis
+      - python-psycopg2
+      - php7.4-fpm
+      - php7.4-gd
+      - php7.4-pgsql
+      - php7.4-curl
+      - php7.4-xml
+      - php7.4-zip
+      - php7.4-intl
+      - php7.4-mbstring
+      - php7.4-json
+      - php7.4-bz2
+      - php7.4-ldap
+      - php-apcu
+      - php7.4-bcmath
+      - php7.4-gmp
+      - imagemagick
+      - php-imagick
+      - php-smbclient
+      - ldap-utils
+#      - turnserver
+
+  gather_facts: false
+  pre_tasks:
+  - name: Install python for Ansible
+    raw: bash -c "(apt -qqy update && apt install -qqy python python-apt)"
+    register: output
+    changed_when: output.stdout != ""
+  - name: Gathering Facts
+    setup:
+  tasks:
+  - name: show gatherin facts
+    debug:
+      msg: "{{ ansible_default_ipv4.address }}"
+  - name: ensure .ssh is present
+    file:
+      path: "/root/.ssh"
+      state: directory   
+  - name: enable root login
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^PermitRootLogin yes'
+      line: 'PermitRootLogin prohibit-password'
+  - name: deny login with pam
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^#ChallengeResponseAuthentication yes'
+      line: 'ChallengeResponseAuthentication no'
+  - name: deny login with password
+    lineinfile: 
+      path: /etc/ssh/sshd_config
+      regexp: '^#PasswordAuthentication no'
+      line: 'PasswordAuthentication no'
+# Add repro
+  - name: Add sury.org/php key for source list
+    apt_key:
+      url: https://packages.sury.org/php/apt.gpg
+      state: present
+  - name: add php repository
+    apt_repository:
+      repo: 'deb [arch=amd64] https://packages.sury.org/php/ buster main'
+      state: present
+      filename: php.repro
+  - name: Add nginx.org key for source list
+    apt_key:
+      url: https://nginx.org/keys/nginx_signing.key
+      state: present
+  - name: add nginx repository
+    apt_repository:
+      repo: deb [arch=amd64] http://nginx.org/packages/mainline/debian buster nginx
+      state: present
+      filename: nginx.repro
+# Add repro
+  - name: update debian
+    apt:
+      update_cache: yes
+      upgrade: yes
+  - name: dist debian
+    apt:
+      upgrade: dist
+  - name: install required packages
+    apt: 
+      name: "{{ required_packages }}" 
+      state: present
+      update_cache: yes
+  - name: set Hostname
+    shell: hostname {{ vars_name_nextcloud }}
+  - name: generate hash pass for root
+    delegate_to: localhost
+    command:  python -c "from passlib.hash import sha512_crypt; import getpass; print(sha512_crypt.hash('{{ vault_root_password_dc }}'))"
+    register: hash
+  - name: change root password
+    user: 
+      name: root
+      update_password: always 
+      password: '{{ hash.stdout }}'  
+  - name: copy hosts file
+    template: 
+      src: "hosts"
+      dest: "/etc/hosts"
+  - name: copy interfaces file
+    template: 
+      src: "interfaces"
+      dest: "/etc/network/interfaces"  
+  - name: copy resolv.conf
+    template: 
+      src: "resolv.conf"
+      dest: "/etc/resolv.conf"
+# letsencrypt      
+  - name: Create /var/www/letsencrypt/.well-known/acme-challenge if it does not exist
+    file:
+      path: /var/www/letsencrypt/.well-known/acme-challenge
+      state: directory
+      mode: '0755'
+      owner: "www-data"
+      group: "www-data"
+  - name: detect existing letsencrypt certificate
+    stat: path=/etc/letsencrypt/live/{{ vars_domainname_nextcloud }}
+    register: letsencrypt_cert
+  - name: stop nginx
+    service:
+      name: nginx
+      state: stopped
+    when: (letsencrypt_cert.stat.exists == False)
+  - name: obtain SSL certificate using webroot plugin
+    shell: 'certbot certonly -n --agree-tos --standalone -d {{ vars_domainname_nextcloud }} -m {{ vars_domainemail_nextcloud }}'
+    when: (letsencrypt_cert.stat.exists == False)
+  - name: Ensure the certbot renewal job runs every friday at 4:11 o clock
+    cron:
+      name: "certbot renewal"
+      month: "*"
+      weekday: "4"
+      hour: "4"
+      minute: "11"
+      user: root
+      job: "/usr/bin/certbot renew --nginx"
+      cron_file: ansible_certbot_renewal
+  - name: Create /etc/ssl/nginx/ if it does not exist
+    file:
+      path: /etc/ssl/nginx/
+      state: directory
+      mode: '0700'
+      owner: "root"
+      group: "root"
+  - name: link cert to /etc/ssl/nginx/fullchain.pem
+    file:
+      src: /etc/letsencrypt/live/{{ vars_domainname_nextcloud }}/fullchain.pem
+      dest: /etc/ssl/nginx/fullchain.pem
+      state: link      
+      mode: '0600'
+      owner: "root"
+      group: "root"
+  - name: link cert to /etc/ssl/nginx/chain.pem
+    file:
+      src: /etc/letsencrypt/live/{{ vars_domainname_nextcloud }}/chain.pem
+      dest: /etc/ssl/nginx/chain.pem
+      state: link      
+      mode: '0600'
+      owner: "root"
+      group: "root"
+  - name: link cert to /etc/ssl/nginx/privkey.pem
+    file:
+      src: /etc/letsencrypt/live/{{ vars_domainname_nextcloud }}/privkey.pem
+      dest: /etc/ssl/nginx/privkey.pem
+      state: link
+      mode: '0400'
+      owner: "root"
+      group: "root"
+  - name: Change file permissions of /etc/ssl/nginx/cert.pem
+    file:
+      path: /etc/letsencrypt/live/{{ vars_domainname_nextcloud }}/cert.pem
+      mode: '0600'
+      owner: "root"
+      group: "root"
+# letsencrypt
+  - name: Change file ownership, group and permissions of /var/www
+    file:
+      path: /var/www
+      owner: "www-data"
+      group: "www-data"
+      mode: '0755'
+      recurse: yes
+      state: directory
+  - name: Set timezone to Europe/Berlin
+    timezone:
+      name: Europe/Berlin
+### PHP TUNING ###
+  - name: copy php www.conf
+    template: 
+      src: "php_www.conf"
+      dest: "/etc/php/7.4/fpm/pool.d/www.conf"
+      block_start_string: "!#?#+"
+      block_end_string: "+#?#!"
+  - name: copy php cli/php.ini
+    template: 
+      src: "php_cli_php.ini"
+      dest: "/etc/php/7.4/cli/php.ini"
+  - name: copy php fpm/php.ini
+    template: 
+      src: "php_fpm_php.ini"
+      dest: "/etc/php/7.4/fpm/php.ini"
+  - name: copy php apcu.ini
+    template: 
+      src: "php_apcu.ini"
+      dest: "/etc/php/7.4/mods-available/apcu.ini"
+  - name: copy ImageMagick-6/policy.xml
+    template: 
+      src: "imagemagick_policy.xml"
+      dest: "/etc/ImageMagick-6/policy.xml"
+### PHP TUNING ###
+  - name: ensure php-fpm is enabled and running
+    service:
+      name: php7.4-fpm
+      enabled: yes
+      state: started
+  - name: ensure postgres is enabled and running
+    service: 
+      name=postgresql 
+      state=started 
+      enabled=yes
+# PostGreSQL
+  - name: generate hash pass for postgres system-User
+    delegate_to: localhost
+    command:  python -c "from passlib.hash import sha512_crypt; import getpass; print(sha512_crypt.hash('{{ vult_nextcloud_postgres_systemuser_password }}'))"
+    register: hash
+  - name: change postgres system-User password
+    user: 
+      name: postgres
+      update_password: always 
+      password: '{{ hash.stdout }}' 
+  - name: set password for db-user postgres
+    postgresql_user:
+      name: postgres
+      password: '{{ vault_nextcloud_postgres_user_password }}'
+      encrypted: True
+    become: yes
+    become_user: postgres
+  - name: Create the "{{ vault_nextcloud_postgres_db_owner }}" user
+    postgresql_user:
+      name: "{{ vault_nextcloud_postgres_db_owner }}"
+      password: "{{ vault_nextcloud_postgres_db_owner_password }}"
+      encrypted: True
+    become: yes
+    become_user: postgres
+  - name: create the "{{ vault_nextcloud_postgres_database }}" db
+    postgresql_db:
+      name: "{{ vault_nextcloud_postgres_database }}"
+      owner: "{{ vault_nextcloud_postgres_db_owner }}"
+      template: template0
+      encoding: UTF8
+      lc_collate: 'de_DE.UTF-8'
+      lc_ctype: 'de_DE.UTF-8'
+    become: yes
+    become_user: postgres
+  - name: Create the "{{ vault_nextcloud_postgres_rainloop_db_owner }}" user
+    postgresql_user:
+      name: "{{ vault_nextcloud_postgres_rainloop_db_owner }}"
+      password: "{{ vault_nextcloud_postgres_rainloop_db_owner_password }}"
+      encrypted: True
+    become: yes
+    become_user: postgres
+  - name: create the "{{ vault_nextcloud_postgres_rainloop_database }}" db
+    postgresql_db:
+      name: "{{ vault_nextcloud_postgres_rainloop_database }}"
+      owner: "{{ vault_nextcloud_postgres_rainloop_db_owner }}"
+      template: template0
+      encoding: UTF8
+      lc_collate: 'de_DE.UTF-8'
+      lc_ctype: 'de_DE.UTF-8'
+    become: yes
+    become_user: postgres
+  - name: set md5 password authentication for postgres
+    lineinfile:
+      path: /etc/postgresql/11/main/pg_hba.conf
+      regexp: 'local   all             all                                     peer'
+      line: 'local   all             all                                     md5'
+      create: yes
+  - name: ensure postgres is enabled; restart service
+    service:
+      name: postgresql
+      enabled: yes
+      state: restarted      
+# PostGreSQL
+# Redis
+  - name: add port to redis.conf
+    lineinfile:
+      path: /etc/redis/redis.conf
+      regexp: 'port 6379'
+      line: 'port 0'
+      firstmatch: yes
+      create: yes
+  - name: add unixsocket to redis.conf
+    lineinfile:
+      path: /etc/redis/redis.conf   
+      regexp: '# unixsocket /var/run/redis/redis-server.sock'
+      line: 'unixsocket /var/run/redis/redis-server.sock'
+      create: yes
+  - name: add unixsocketperm to redis.conf
+    lineinfile:
+      path: /etc/redis/redis.conf   
+      regexp: 'unixsocketperm 700'
+      line: 'unixsocketperm 770'
+      create: yes
+  - name: add maxclients to redis.conf
+    lineinfile:
+      path: /etc/redis/redis.conf   
+      regexp: '# maxclients 10000'
+      line: 'maxclients 512'
+      create: yes
+  - name: add www-data user to redis group
+    user:
+      name: www-data
+      groups: redis
+      append: yes
+  - name: add vm.overcommit_memory to sysctl.conf
+    lineinfile:
+      path: /etc/sysctl.conf
+      line: 'vm.overcommit_memory = 1'
+      create: yes
+# Redis
+# Nginx
+  - name: copy nginx.conf
+    template: 
+      src: "nginx.conf"
+      dest: "/etc/nginx/nginx.conf" 
+  - name: copy nextcloud.conf for nginx
+    template: 
+      src: "nginx_nextcloud.conf"
+      dest: "/etc/nginx/conf.d/nextcloud.conf" 
+  - name: copy letsencrypt.conf for nginx
+    template: 
+      src: "nginx_letsencrypt.conf"
+      dest: "/etc/nginx/conf.d/letsencrypt.conf"
+  - name: copy ssl.conf for nginx
+    template: 
+      src: "nginx_ssl.conf"
+      dest: "/etc/nginx/ssl.conf"
+  - name: copy proxy.conf for nginx
+    template: 
+      src: "nginx_proxy.conf"
+      dest: "/etc/nginx/proxy.conf"
+  - name: copy header.conf for nginx
+    template: 
+      src: "nginx_header.conf"
+      dest: "/etc/nginx/header.conf"
+  - name: copy optimization.conf for nginx
+    template: 
+      src: "nginx_optimization.conf"
+      dest: "/etc/nginx/optimization.conf"
+  - name: copy php_optimization.conf for nginx
+    template: 
+      src: "nginx_php_optimization.conf"
+      dest: "/etc/nginx/php_optimization.conf"
+  - name: Generate DH Parameters
+    openssl_dhparam:
+      path: /etc/ssl/certs/dhparam.pem
+      size: 4096
+      mode: '600'
+  - name: ensure nginx is enabled; restart service
+    service:
+      name: nginx
+      enabled: yes
+      state: restarted
+# Nginx
+# Nextcloud
+  - name: Check if Nextcloud is already downloaded
+    stat:
+      path: "/var/www/nextcloud"
+    register: nextcloud_dir
+  - name: Download and extract Nextcloud
+    unarchive:
+      src: https://download.nextcloud.com/server/releases/latest.tar.bz2
+      dest: /var/www
+      remote_src: yes
+      owner: www-data
+      group: www-data
+    when: not nextcloud_dir.stat.exists      
+  - name: Create /var/nc_data if it does not exist
+    file:
+      path: /var/nc_data_mount
+      state: directory
+      mode: '0755'
+      owner: "www-data"
+      group: "www-data"
+  - name: Mount {{ vars_nfs_mount_source }} to /var/nc_data_mount
+    mount:
+      path: /var/nc_data_mount
+      src: "{{ vars_nfs_mount_source }}"
+      opts: auto,nofail,noatime,nolock,intr,tcp,actimeo=1800
+      state: mounted
+      fstype: nfs
+  - name: check if nextcloud is already configured
+    lineinfile:
+      path: /var/www/nextcloud/config/config.php
+      regexp: "^  'installed' => true,"
+      state: absent
+    check_mode: yes
+    register: is_nextcloud_configed    
+  - name: ensure nextcloud is configured
+    command: php /var/www/nextcloud/occ maintenance:install --database "pgsql" --database-name "{{ vault_nextcloud_postgres_database }}"  --database-user "{{ vault_nextcloud_postgres_db_owner }}" --database-pass "{{ vault_nextcloud_postgres_db_owner_password }}" --admin-user "{{ vault_nextcloud_admin_user }}" --admin-pass "{{ vault_nextcloud_admin_password }}" --data-dir "/var/nc_data_mount"
+    become: true
+    become_user: www-data
+    when: not is_nextcloud_configed.changed
+  - name: ensure domainname is present in nextcloud config.php
+    command: php /var/www/nextcloud/occ config:system:set trusted_domains 0 --value={{ vars_domainname_nextcloud }}
+    become: true
+    become_user: www-data
+    when: not is_nextcloud_configed.changed
+  - name: ensure domainname is overwrite.cli.url in nextcloud
+    command: php /var/www/nextcloud/occ config:system:set overwrite.cli.url --value=https://{{ vars_domainname_nextcloud }}
+    become: true
+    become_user: www-data
+    when: not is_nextcloud_configed.changed
+  - name: ensure nextcloud cron job is done by cron nextcloud
+    command: php /var/www/nextcloud/occ background:cron
+    become: true
+    become_user: www-data
+    when: not is_nextcloud_configed.changed
+# Nextcloud
+# Nextcloud APPS
+  - name: ensure survey_client is disabled in nextcloud
+    command: php /var/www/nextcloud/occ app:disable survey_client
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: ensure firstrunwizard is disabled in nextcloud
+    command: php /var/www/nextcloud/occ app:disable firstrunwizard
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: ensure activity is disabled in nextcloud
+    command: php /var/www/nextcloud/occ app:disable activity
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: ensure admin_audit is enabled in nextcloud
+    command: php /var/www/nextcloud/occ app:enable admin_audit
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: ensure files_pdfviewer is enabled in nextcloud
+    command: php /var/www/nextcloud/occ app:enable files_pdfviewer
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add rainloop app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable rainloop
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add keeweb app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable keeweb --force
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add talk app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable spreed
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add contacts app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable contacts
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add calendar app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable calendar
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add music app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable music
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add notes app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable notes
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add tasks app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable tasks
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add groupfolders app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable groupfolders
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add files_ebookreader app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable files_ebookreader --force
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add group_everyone app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable group_everyone
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add previewgenerator app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable previewgenerator
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add Collabora Online - Built-in CODE Server  app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable richdocumentscode
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+  - name: add Collabora Online app to nextcloud
+    command: php /var/www/nextcloud/occ app:enable richdocuments
+    become: true
+    become_user: www-data
+#    when: not is_nextcloud_configed.changed
+# Nextcloud APPS
+
+  - name: append settings to nginx config.php
+    blockinfile: path=/var/www/nextcloud/config/config.php marker='# {mark} ANSIBLE ADDED CONFIGS' insertbefore=\)\; block={{ lookup('file', 'templates/nextcloud_append_to_config.php') }} create=yes state=present
+  - name: add postgres socket to nginx config.php
+    lineinfile: 
+      path: /var/www/nextcloud/config/config.php
+      regexp: "'dbhost' => 'localhost*"
+      line: "  'dbhost' => 'localhost:/var/run/postgresql/.s.PGSQL.5432',"
+      create: yes
+  - name: disable output_buffering in nginx user.ini
+    lineinfile: 
+      path: /var/www/nextcloud/.user.ini
+      regexp: "output_buffering=.*"
+      line: "output_buffering='Off'"
+      create: yes
+  - name: Ensure cron job for nextcloud runs every 5 minutes
+    cron:
+      name: "nectcloud cron"
+      month: "*"
+      weekday: "*"
+      hour: "*"
+      minute: "*/5"
+      user: www-data
+      job: "php -f /var/www/nextcloud/cron.php > /dev/null 2>&1"
+      cron_file: ansible_nectcloud_cron
+
+  - name: admin-login credentials
+    debug:
+      msg: " URL= https://{{ vars_domainname_nextcloud }} | username= {{ vault_nextcloud_admin_user }} | password= {{ vault_nextcloud_admin_password }} "
+  - name: rainloop credentials
+    debug:
+      msg: " user= admin | password= 12345 "
+  - name: rainloop settings
+    debug:
+      msg: " Config Rainloop with: | DSN= pgsql:host=127.0.0.1;port=5432;dbname={{ vault_nextcloud_postgres_rainloop_database }} | User= {{ vault_nextcloud_postgres_rainloop_db_owner }} | password= {{ vault_nextcloud_postgres_rainloop_db_owner_password }} "
+
+  - name: reboot machine
+    reboot:
