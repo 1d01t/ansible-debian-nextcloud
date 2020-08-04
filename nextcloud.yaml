@@ -562,7 +562,7 @@
     become_user: www-data
 #    when: not is_nextcloud_configed.changed
 # Nextcloud APPS
-
+# modify Nextcloud
   - name: append settings to nextcloud config.php
     blockinfile: path=/var/www/nextcloud/config/config.php marker='# {mark} ANSIBLE ADDED CONFIGS' insertbefore=\)\; block={{ lookup('file', 'templates/nextcloud_append_to_config.php') }} create=yes state=present
   - name: add postgres socket to nginx config.php
@@ -587,7 +587,8 @@
       user: www-data
       job: "php -f /var/www/nextcloud/cron.php > /dev/null 2>&1"
       cron_file: ansible_nectcloud_cron
-
+# modify Nextcloud
+# print creds
   - name: admin-login credentials
     debug:
       msg: " URL= https://{{ vars_domainname_nextcloud }} | username= {{ vault_nextcloud_admin_user }} | password= {{ vault_nextcloud_admin_password }} "
@@ -597,6 +598,6 @@
   - name: rainloop settings
     debug:
       msg: " Config Rainloop with: | DSN= pgsql:host=127.0.0.1;port=5432;dbname={{ vault_nextcloud_postgres_rainloop_database }} | User= {{ vault_nextcloud_postgres_rainloop_db_owner }} | password= {{ vault_nextcloud_postgres_rainloop_db_owner_password }} "
-
+# print creds
   - name: reboot machine
     reboot:
