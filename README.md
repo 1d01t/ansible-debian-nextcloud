@@ -8,6 +8,33 @@ this ansible script installs nextcloud on debian buster, with:
   - php 7.4 from external repo: https://packages.sury.org/php/
   - letsencrypt with nginx plugin
 
+# Nextcloud APPS this project is using
+
+disabl:
+  - survey_client
+  - firstrunwizard
+  - activity
+  
+enabl:
+  - admin_audit
+  - files_pdfviewer
+  
+add:
+  - rainloop
+  - keeweb
+  - talk
+  - contacts
+  - calendar
+  - music
+  - notes
+  - tasks
+  - groupfolders
+  - files_ebookreader
+  - group_everyone
+  - previewgenerator
+  - Collabora Online - Built-in CODE Server
+  - Collabora Online
+
 # Prepare plain debian buster instance
   - install tasksel
   - add your ssh key to the instance
