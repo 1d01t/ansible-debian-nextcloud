@@ -563,7 +563,7 @@
 #    when: not is_nextcloud_configed.changed
 # Nextcloud APPS
 
-  - name: append settings to nginx config.php
+  - name: append settings to nextcloud config.php
     blockinfile: path=/var/www/nextcloud/config/config.php marker='# {mark} ANSIBLE ADDED CONFIGS' insertbefore=\)\; block={{ lookup('file', 'templates/nextcloud_append_to_config.php') }} create=yes state=present
   - name: add postgres socket to nginx config.php
     lineinfile: 
