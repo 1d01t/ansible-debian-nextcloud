@@ -10,12 +10,12 @@ this ansible script installs nextcloud on debian buster, with:
 
 # Nextcloud APPS this project is using
 
-disabl:
+disable:
   - survey_client
   - firstrunwizard
   - activity
   
-enabl:
+enable:
   - admin_audit
   - files_pdfviewer
   
