@@ -68,6 +68,6 @@ secure yourself and encrypt the vault.yml:
 
 # Build your own Nextcloud server
 
-run:
+finaly run:
   - ansible-playbook -i hosts nextcloud.yaml --ask-vault-pass
 
