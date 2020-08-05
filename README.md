@@ -8,7 +8,8 @@ this ansible script installs nextcloud on debian buster, with:
   - php 7.4 from external repo: https://packages.sury.org/php/
   - letsencrypt with nginx plugin
 
-# Nextcloud APPS this project is using
+Nextcloud APPS this project is using
+------------
 
 disable:
   - survey_client
@@ -35,13 +36,16 @@ add:
   - Collabora Online - Built-in CODE Server
   - Collabora Online
 
-# Prepare plain debian buster instance
+Prepare plain debian buster instance
+------------
+
   - install tasksel
   - add your ssh key to the instance
   - allow ssh root login
   - start ssh service
 
-# Modify the project to fit your needs
+Modify the project to fit your needs
+------------
 
 Nginx is configured to work behind an nginx SNI proxy server.
 If you don't want that edit:
@@ -66,7 +70,8 @@ Before you can use this project, you habe to set your configs in:
 secure yourself and encrypt the vault.yml:
   - ansible-vault encrypt group_vars/homeserver/vault.yml
 
-# Build your own Nextcloud server
+Build your own Nextcloud server
+------------
 
 finaly run:
   - ansible-playbook -i hosts nextcloud.yaml --ask-vault-pass
