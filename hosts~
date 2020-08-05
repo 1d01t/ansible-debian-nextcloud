@@ -1,0 +1,2 @@
+[homeserver]
+nextcloud ansible_host=10.10.2.30

@@ -135,7 +135,7 @@
     shell: hostname {{ vars_name_nextcloud }}
   - name: generate hash pass for root
     delegate_to: localhost
-    command:  python -c "from passlib.hash import sha512_crypt; import getpass; print(sha512_crypt.hash('{{ vault_root_password_dc }}'))"
+    command:  python -c "from passlib.hash import sha512_crypt; import getpass; print(sha512_crypt.hash('{{ vault_root_password_nextcloud }}'))"
     register: hash
   - name: change root password
     user: 

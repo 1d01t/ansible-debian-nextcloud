@@ -1,4 +1,4 @@
-    vault_root_password_dc: s3cr3t
+    vault_root_password_nextcloud: s3cr3t
     vult_nextcloud_postgres_systemuser_password: s3cr3t
     vault_nextcloud_postgres_user_password: s3cr3t
     vault_nextcloud_postgres_db_owner: ncuser
